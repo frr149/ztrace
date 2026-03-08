@@ -20,6 +20,11 @@ class Frame:
             return False
         return True
 
+    @property
+    def is_symbolicated(self) -> bool:
+        """True si el frame tiene nombre simbólico (no solo dirección)."""
+        return not self.name.startswith("0x")
+
 
 @dataclass
 class Sample:
