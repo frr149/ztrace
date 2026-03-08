@@ -74,6 +74,32 @@ ztrace summary ./MyApp.trace --depth 10
 
 When a binary is stripped (e.g. Spotify), ztrace reports the percentage of unsymbolicated samples so you know you need dSYMs for a full picture.
 
+## Integration with Claude Code
+
+ztrace was built specifically for LLM-assisted profiling workflows. Add this to your `CLAUDE.md` (global or per-project) so Claude Code uses it automatically:
+
+```markdown
+### Profiling (xctrace)
+
+- Use `ztrace summary <file.trace>` to read traces. NEVER read raw xctrace XML.
+- Workflow: `xctrace record` → `ztrace summary`
+- Flags: `--threshold 0.5` (more functions), `--depth 10` (deeper stacks)
+```
+
+Typical workflow inside Claude Code:
+
+```bash
+# 1. Record a trace
+xctrace record --template 'Time Profiler' --time-limit 5s --launch -- .build/debug/MyApp
+
+# 2. Summarize (ztrace output fits in context window)
+ztrace summary MyApp.trace
+
+# 3. Claude Code reads the 10-line summary and suggests optimizations
+```
+
+Without ztrace, step 2 would produce 30,000+ lines of XML that either overflows the context window or drowns the signal in noise.
+
 ## Requirements
 
 - macOS (xctrace is Apple-only)
