@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+*.trace
+test/fixtures/sample-export.xml
+.DS_Store
