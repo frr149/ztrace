@@ -1,31 +1,40 @@
 """Lógica de agregación y resumen de samples."""
 
 from collections import defaultdict
+from dataclasses import dataclass
 
+from ztrace.exporter import TraceMetadata
 from ztrace.parser import Sample
 
 
 def summarize(
     samples: list[Sample],
+    metadata: TraceMetadata | None = None,
     depth: int = 5,
     threshold: float = 1.0,
 ) -> str:
-    """Genera un resumen compacto de los samples.
-
-    Args:
-        samples: Lista de samples parseados.
-        depth: Profundidad máxima del call stack a mostrar.
-        threshold: Porcentaje mínimo para incluir una función.
-    """
+    """Genera un resumen compacto de los samples."""
     total_weight = sum(s.weight_ns for s in samples)
     if total_weight == 0:
         return "No samples found.\n"
 
-    # Acumular peso por función de usuario (self time)
-    self_time: dict[str, int] = defaultdict(int)
-    # Acumular peso por función de usuario (total time — aparece en el stack)
+    stats = _compute_stats(samples, depth)
+    return _format(stats, total_weight, len(samples), metadata, depth, threshold)
+
+
+@dataclass
+class _Stats:
+    # función → (self_weight, binary_name)
+    self_time: dict[str, tuple[int, str]]
+    # función → total_weight
+    total_time: dict[str, int]
+    # stack tuple → weight
+    stack_weight: dict[tuple[str, ...], int]
+
+
+def _compute_stats(samples: list[Sample], depth: int) -> _Stats:
+    self_time: dict[str, tuple[int, str]] = {}
     total_time: dict[str, int] = defaultdict(int)
-    # Guardar call stacks de usuario más frecuentes
     stack_weight: dict[tuple[str, ...], int] = defaultdict(int)
 
     for sample in samples:
@@ -33,74 +42,93 @@ def summarize(
         if not user_frames:
             continue
 
-        # Self time: la función de usuario más cercana al leaf
-        self_time[user_frames[0].name] += sample.weight_ns
+        # Self time: frame de usuario más cercano al leaf
+        leaf = user_frames[0]
+        prev_w, prev_bin = self_time.get(leaf.name, (0, leaf.binary_name))
+        self_time[leaf.name] = (prev_w + sample.weight_ns, prev_bin)
 
-        # Total time: cada función de usuario en el stack
+        # Total time
         seen: set[str] = set()
         for f in user_frames:
             if f.name not in seen:
                 total_time[f.name] += sample.weight_ns
                 seen.add(f.name)
 
-        # Call stack de usuario (limitado a depth)
+        # Call stacks compactos
         stack_key = tuple(f.name for f in user_frames[:depth])
         stack_weight[stack_key] += sample.weight_ns
 
-    # Formatear output
+    return _Stats(
+        self_time=self_time,
+        total_time=total_time,
+        stack_weight=stack_weight,
+    )
+
+
+def _format(
+    stats: _Stats,
+    total_weight: int,
+    num_samples: int,
+    metadata: TraceMetadata | None,
+    depth: int,
+    threshold: float,
+) -> str:
     lines: list[str] = []
+
+    # Header con metadata
+    if metadata:
+        lines.append(
+            f"Process: {metadata.process_name}  "
+            f"Duration: {metadata.duration_s:.1f}s  "
+            f"Template: {metadata.template}"
+        )
     total_ms = total_weight / 1_000_000
+    lines.append(f"Samples: {num_samples}  Total CPU: {total_ms:.0f}ms")
+    lines.append("")
 
-    lines.append(f"Total: {total_ms:.0f}ms ({len(samples)} samples)\n")
-
-    # Hotspots por self time
-    lines.append("── Hotspots (self time) ──\n")
-    sorted_self = sorted(self_time.items(), key=lambda x: x[1], reverse=True)
-    for name, weight in sorted_self:
+    # Hotspots (self time) con módulo
+    lines.append("SELF TIME")
+    sorted_self = sorted(
+        stats.self_time.items(), key=lambda x: x[1][0], reverse=True
+    )
+    for name, (weight, binary) in sorted_self:
         pct = 100 * weight / total_weight
         if pct < threshold:
             break
         ms = weight / 1_000_000
-        lines.append(f"  {pct:5.1f}%  {ms:7.0f}ms  {name}\n")
+        lines.append(f"  {pct:5.1f}%  {ms:6.0f}ms  {binary}  {name}")
 
-    # Hotspots por total time (si difiere del self time)
-    if _has_nontrivial_callers(sorted_self, total_time, total_weight, threshold):
-        lines.append("\n── Hotspots (total time) ──\n")
-        sorted_total = sorted(total_time.items(), key=lambda x: x[1], reverse=True)
-        for name, weight in sorted_total:
+    # Total time — solo funciones cuyo total > self * 1.1
+    callers = []
+    for name, total_w in stats.total_time.items():
+        self_w = stats.self_time.get(name, (0, ""))[0]
+        if total_w > self_w * 1.1:
+            pct = 100 * total_w / total_weight
+            if pct >= threshold:
+                callers.append((name, total_w))
+    if callers:
+        lines.append("")
+        lines.append("TOTAL TIME (callers with significant overhead)")
+        callers.sort(key=lambda x: x[1], reverse=True)
+        for name, weight in callers:
             pct = 100 * weight / total_weight
-            if pct < threshold:
-                break
             ms = weight / 1_000_000
-            lines.append(f"  {pct:5.1f}%  {ms:7.0f}ms  {name}\n")
+            lines.append(f"  {pct:5.1f}%  {ms:6.0f}ms  {name}")
 
-    # Top call stacks
-    lines.append("\n── Top call stacks ──\n")
-    sorted_stacks = sorted(stack_weight.items(), key=lambda x: x[1], reverse=True)
+    # Call stacks compactos: root > child > leaf
+    lines.append("")
+    lines.append("CALL STACKS")
+    sorted_stacks = sorted(
+        stats.stack_weight.items(), key=lambda x: x[1], reverse=True
+    )
     for stack, weight in sorted_stacks[:10]:
         pct = 100 * weight / total_weight
         if pct < threshold:
             break
         ms = weight / 1_000_000
-        lines.append(f"  {pct:5.1f}%  {ms:7.0f}ms\n")
-        for i, fname in enumerate(stack):
-            prefix = "    → " if i == 0 else "      "
-            lines.append(f"{prefix}{fname}\n")
+        # Invertir: mostrar root > ... > leaf (más natural para leer)
+        chain = " > ".join(reversed(stack))
+        lines.append(f"  {pct:5.1f}%  {ms:6.0f}ms  {chain}")
 
-    return "".join(lines)
-
-
-def _has_nontrivial_callers(
-    sorted_self: list[tuple[str, int]],
-    total_time: dict[str, int],
-    total_weight: int,
-    threshold: float,
-) -> bool:
-    """True si hay funciones cuyo total time difiere significativamente del self time."""
-    for name, self_w in sorted_self:
-        total_w = total_time.get(name, self_w)
-        if total_w > self_w * 1.1:  # >10% más en total que en self
-            pct = 100 * total_w / total_weight
-            if pct >= threshold:
-                return True
-    return False
+    lines.append("")
+    return "\n".join(lines)

@@ -15,8 +15,8 @@ class Frame:
         """True si el frame pertenece a código del usuario (no sistema)."""
         if self.binary_path.startswith(("/usr/lib/", "/System/")):
             return False
-        # Swift/ObjC runtime internals linkeados en el binario del usuario
-        if self.name.startswith(("__swift_", "swift_", "_swift_", "__objc_")):
+        # Runtime internals linkeados en el binario del usuario
+        if self.name.startswith(("__swift_", "swift_", "_swift_", "__objc_", "DYLD-STUB$$")):
             return False
         return True
 

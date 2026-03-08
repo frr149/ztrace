@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from ztrace.exporter import export_trace
+from ztrace.exporter import export_toc, export_time_profile, parse_metadata
 from ztrace.parser import parse_time_profile
 from ztrace.summarizer import summarize
 
@@ -42,7 +42,9 @@ def parse_args() -> argparse.Namespace:
 
 def cmd_summary(args: argparse.Namespace) -> None:
     """Exporta, parsea y resume un .trace."""
-    xml_data = export_trace(args.trace)
+    toc_xml = export_toc(args.trace)
+    metadata = parse_metadata(toc_xml)
+    xml_data = export_time_profile(args.trace)
     samples = parse_time_profile(xml_data)
-    output = summarize(samples, depth=args.depth, threshold=args.threshold)
+    output = summarize(samples, metadata=metadata, depth=args.depth, threshold=args.threshold)
     sys.stdout.write(output)
