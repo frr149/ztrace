@@ -1,0 +1,18 @@
+[project]
+name = "ztrace"
+version = "0.1.0"
+description = "Compact xctrace (Instruments) summaries optimized for LLM consumption"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Fernando Rodriguez Romero", email = "f@frr.dev" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+ztrace = "ztrace.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"

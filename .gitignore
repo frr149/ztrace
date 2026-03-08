@@ -1,6 +1,16 @@
+# Python
+__pycache__/
+*.egg-info/
+dist/
+.venv/
+
+# Swift (fixtures)
 .build/
 .swiftpm/
+
+# Generated fixtures
 *.trace
 test/fixtures/sample-export.xml
 test/fixtures/hotspot
+
 .DS_Store
