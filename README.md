@@ -4,6 +4,8 @@ Compact `xctrace` (Instruments) summaries optimized for LLM consumption.
 
 **33,000 lines of XML → 10 actionable lines.**
 
+> 📝 [Blog post: how and why ztrace was built](https://frr.dev/posts/ztrace-xctrace-compact-summary-llm/)
+
 ## Problem
 
 `xctrace export` generates exhaustive XML — every sample, every backtrace frame, every memory address. This is great for Instruments' interactive UI, but when an LLM needs to find hotspots, the signal-to-noise ratio is brutal.
