@@ -2,4 +2,5 @@
 .swiftpm/
 *.trace
 test/fixtures/sample-export.xml
+test/fixtures/hotspot
 .DS_Store
