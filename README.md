@@ -1,42 +1,82 @@
 # ztrace
 
-CLI tool that summarizes `xctrace` (Instruments) output into a compact format optimized for LLM consumption (especially Claude Code).
+Compact `xctrace` (Instruments) summaries optimized for LLM consumption.
+
+**33,000 lines of XML → 10 actionable lines.**
 
 ## Problem
 
-`xctrace export` generates XML files with tens of thousands of lines — full call trees, individual samples, repetitive metadata. When Claude Code profiles Swift apps with xctrace, this output quickly consumes the context window and buries actionable information in noise.
+`xctrace export` generates exhaustive XML — every sample, every backtrace frame, every memory address. This is great for Instruments' interactive UI, but when an LLM needs to find hotspots, the signal-to-noise ratio is brutal.
 
-## What ztrace does
+## Example
 
-Takes a `.trace` bundle (or records one) and produces a ~200-line summary with real hotspots, filtering out non-actionable system frames.
+```
+$ ztrace summary ./MyApp.trace
 
-## Planned usage
+Process: ghostty  Duration: 3.8s  Template: Time Profiler
+Samples: 295  Total CPU: 295ms
 
-```bash
-# Summarize an existing .trace
-ztrace summary ./MyApp.trace
+SELF TIME
+   53.2%     157ms  ghostty  main
+    3.7%      11ms  ghostty  renderer.metal.RenderPass.begin
+    3.1%       9ms  ghostty  renderer.generic.Renderer(renderer.Metal).rebuildCells
+    2.7%       8ms  ghostty  renderer.generic.Renderer(renderer.Metal).drawFrame
+    1.7%       5ms  ghostty  font.shaper.coretext.Shaper.shape
 
-# Record + summarize in one step
-ztrace record ./MyApp --template 'Time Profiler' --duration 5
+CALL STACKS
+   53.2%     157ms  main
+    1.7%       5ms  main > @objc TerminalWindow.title.setter
 ```
 
-## Output goals
+## What it does
 
-- Compact: fits in <200 lines for a typical trace
-- Actionable: shows user code hotspots with CPU % attribution
-- LLM-friendly: no decorative formatting, just structured information
-- Filtered: excludes system frames (UIKit internals, libdispatch, etc.)
+1. Runs `xctrace export --toc` for trace metadata (process, duration, template)
+2. Runs `xctrace export --xpath` to extract the `time-profile` table
+3. Parses the XML, resolving xctrace's `id`/`ref` deduplication system
+4. Filters non-actionable frames (system libraries, Swift runtime internals, dyld stubs, unsymbolicated addresses)
+5. Aggregates by function with self time, total time, and call stacks
 
-## Stack
+## Install
 
-- **Language:** Swift
-- **Build:** Swift Package Manager
-- **Dependencies:** minimal — Foundation XMLParser for XML processing
-- **Tests:** XCTest with real trace fixtures
+```bash
+# With uv (recommended)
+uv tool install git+https://github.com/frr149/ztrace
 
-## Status
+# From source
+git clone https://github.com/frr149/ztrace
+cd ztrace
+uv sync
+```
 
-Early development — currently in Phase 0 (researching xctrace export format with real data before writing any parsing code).
+## Usage
+
+```bash
+# Summarize a .trace bundle
+ztrace summary ./MyApp.trace
+
+# Lower threshold to show more functions (default: 1%)
+ztrace summary ./MyApp.trace --threshold 0.5
+
+# Deeper call stacks (default: 5)
+ztrace summary ./MyApp.trace --depth 10
+```
+
+## What gets filtered
+
+| Category | Examples | Why |
+|----------|----------|-----|
+| System libraries | libdispatch, dyld, libsystem_m | Can't optimize what you don't own |
+| Swift/ObjC runtime | `__swift_instantiate*`, `_swift_*` | Runtime internals, not your code |
+| Dyld stubs | `DYLD-STUB$$sin` | Dynamic linker thunks |
+| Unsymbolicated frames | `0x104885404` | Stripped binaries — noted in output |
+
+When a binary is stripped (e.g. Spotify), ztrace reports the percentage of unsymbolicated samples so you know you need dSYMs for a full picture.
+
+## Requirements
+
+- macOS (xctrace is Apple-only)
+- Python ≥ 3.12
+- Xcode Command Line Tools (`xcode-select --install`)
 
 ## License
 
