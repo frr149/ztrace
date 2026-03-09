@@ -106,6 +106,11 @@ Without ztrace, step 2 would produce 30,000+ lines of XML that either overflows 
 - Python ≥ 3.12
 - Xcode Command Line Tools (`xcode-select --install`)
 
+## Posts
+
+- [33,000 lines of XML to tell you heavyWork() is slow](https://frr.dev/posts/ztrace-xctrace-compact-summary-llm/) — How and why ztrace was built.
+- [From /simplify to the Jedi Council](https://frr.dev/posts/simplify-jedi-council-ai-code-review/) — Using ztrace as Mike Acton's instrumentation tool inside an AI code review pipeline.
+
 ## License
 
 MIT
